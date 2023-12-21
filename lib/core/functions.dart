@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-List<List<int>> classTimeStamps = [
+const List<List<int>> classTimeStamps = [
   [25200, 28200],
   [28800, 31800],
   [33000, 36000],
@@ -17,7 +17,7 @@ List<List<int>> classTimeStamps = [
   [75600, 78600],
 ];
 
-List<String> dates = [
+const List<String> dates = [
   "Chủ Nhật",
   "Thứ Hai",
   "Thứ Ba",
@@ -27,6 +27,7 @@ List<String> dates = [
   "Thứ Bảy",
   ""
 ];
+const List<int> emptyDint = [0, 0, 0, 0, 0, 0, 0];
 
 class ClassTimeStamp {
   final int dint;
@@ -73,12 +74,16 @@ class SubjectClass {
   final List<ClassTimeStamp> timestamp;
   late final List<int> dint;
   late final int length;
+  late final List<String> teachers;
+  late final List<String> rooms;
   SubjectClass({
     required this.classID,
     required this.timestamp,
   }) {
-    dint = [0, 0, 0, 0, 0, 0, 0];
-		length = timestamp.length;
+    dint = [...emptyDint];
+    length = timestamp.length;
+    teachers = timestamp.map((m) => m.teacherID).toList();
+    rooms = timestamp.map((m) => m.room).toList();
     if (timestamp[0].room == "Elearning") {
       return;
     }
@@ -100,11 +105,51 @@ class SubjectClass {
 class SubjectFilter {
   final List<String> inClass;
   final List<String> notInClass;
-  final List<String> teacherIDs;
+  final List<String> includeTeacher;
+  final List<String> excludeTeacher;
+  final List<int> forcefulDint;
+  final List<int> spareDint;
+  late int length;
+  late final bool isEmpty;
+  late final bool isNotEmpty;
   SubjectFilter({
     this.inClass = const [],
     this.notInClass = const [],
-    this.teacherIDs = const [],
+    this.includeTeacher = const [],
+    this.excludeTeacher = const [],
+    this.forcefulDint = const [],
+    this.spareDint = const [],
+  }) {
+    length = 0;
+    if (inClass.isNotEmpty) {
+      length++;
+    }
+    if (notInClass.isNotEmpty) {
+      length++;
+    }
+    if (includeTeacher.isNotEmpty) {
+      length++;
+    }
+    if (excludeTeacher.isNotEmpty) {
+      length++;
+    }
+    if (forcefulDint.isNotEmpty) {
+      length++;
+    }
+    if (spareDint.isNotEmpty) {
+      length++;
+    }
+    isEmpty = length == 0;
+    isNotEmpty = !isEmpty;
+  }
+}
+
+class CompareStamp {
+  final double delta;
+  final SubjectClass subjectClass;
+  const CompareStamp({
+    required this.delta,
+    required this.subjectClass,
   });
 }
 
@@ -120,19 +165,161 @@ class Subject {
     required this.classes,
   });
 
-  List<SubjectClass> filter(SubjectFilter filterLayer) {
+  Subject filter(SubjectFilter filterLayer) {
+    if (classes[0].rooms[0] == "Elearning" || filterLayer.isEmpty) {
+      return this;
+    }
     List<SubjectClass> result = [];
     if (filterLayer.inClass.isNotEmpty) {
-      //
+      result = classes
+          .where((c) => filterLayer.inClass.contains(c.classID))
+          .toList();
     }
     if (filterLayer.notInClass.isNotEmpty) {
-      //
+      result = classes
+          .where((c) => !filterLayer.notInClass.contains(c.classID))
+          .toList();
     }
-    if (filterLayer.teacherIDs.isNotEmpty) {
-      //
+    if (filterLayer.includeTeacher.isNotEmpty) {
+      List<CompareStamp> o = classes
+          .map((c) => CompareStamp(
+                delta: c.teachers.isEmpty
+                    ? 0.0
+                    : c.teachers
+                            .where(
+                                (t) => filterLayer.includeTeacher.contains(t))
+                            .length /
+                        c.teachers.length,
+                subjectClass: c,
+              ))
+          .where((c) => c.delta != 0.0)
+          .map((c) => CompareStamp(
+                delta: ((c.delta - 1).abs() * 100),
+                subjectClass: c.subjectClass,
+              ))
+          .toList();
+      o.sort((a, b) => a.delta.compareTo(b.delta).toInt());
+      result = o.map((c) => c.subjectClass).toList();
     }
-    return result;
+    if (filterLayer.excludeTeacher.isNotEmpty) {
+      if (classes[0].rooms[0] == "Elearning") {
+        return this;
+      }
+      result = classes
+          .map((c) => CompareStamp(
+                delta: c.teachers.isEmpty
+                    ? 0.0
+                    : c.teachers
+                            .where(
+                              (t) => filterLayer.excludeTeacher.contains(t),
+                            )
+                            .length /
+                        c.teachers.length,
+                subjectClass: c,
+              ))
+          .where((c) => c.delta == 0.0)
+          .map((c) => c.subjectClass)
+          .toList();
+    }
+    if (filterLayer.forcefulDint.isNotEmpty) {
+      result = classes.where((c) {
+        List<int> tmpDint = [...emptyDint];
+        for (int i = 0; i < 7; i++) {
+          tmpDint[i] = c.dint[i] & filterLayer.forcefulDint[i];
+        }
+        return tmpDint.fold(0, (a, b) => a + b) == 0;
+      }).toList();
+    }
+    if (filterLayer.spareDint.isNotEmpty) {
+      List<CompareStamp> o = classes
+          .map((c) => CompareStamp(
+                delta: (() {
+                  List<int> tmpDint = [...emptyDint];
+                  for (int i = 0; i < 7; i++) {
+                    tmpDint[i] = c.dint[i] & filterLayer.forcefulDint[i];
+                  }
+                  return tmpDint
+                      .map((d) => d + 1)
+                      .fold(1, (p, c) => p * c)
+                      .toDouble();
+                })(),
+                subjectClass: c,
+              ))
+          .toList();
+      o.sort((a, b) => a.delta.compareTo(b.delta).toInt());
+      result = o.map((c) => c.subjectClass).toList();
+    }
+    return Subject(subjectID: subjectID, name: name, tin: tin, classes: result);
   }
+}
+
+class SampleTkb {
+  final List<SubjectClass> classes;
+  late final List<int> dint;
+  late final int length;
+  SampleTkb({required this.classes}) {
+    length = classes.length;
+    dint = [...emptyDint];
+    for (SubjectClass c in classes) {
+      for (int i = 0; i < 7; i++) {
+        dint[i] |= c.dint[i];
+      }
+    }
+  }
+}
+
+class GenTkb {
+  final List<Subject> _tkb;
+  late final Map<String, SubjectFilter> _input;
+  late List<SampleTkb> output = [];
+  late List<int> dint = [...emptyDint];
+  late int length = 0;
+  GenTkb(this._tkb, this._input) {
+    _input.forEach((key, value) => _generate(key, value));
+  }
+
+  void _generate(String key, SubjectFilter filterLayer) {
+    Subject filteredSubject =
+        _tkb.firstWhere((subj) => subj.subjectID == key).filter(filterLayer);
+    if (output.isEmpty) {
+      output
+          .addAll(filteredSubject.classes.map((c) => SampleTkb(classes: [c])));
+    } else {
+      List<SampleTkb> newOutput = [];
+      for (SampleTkb sample in output) {
+        for (SubjectClass target in filteredSubject.classes) {
+          List<int> tmpDint = [...emptyDint];
+          for (int i = 0; i < 7; i++) {
+            tmpDint[i] = sample.dint[i] & target.dint[i];
+          }
+          if (tmpDint.fold(0, (a, b) => a + b) == 0) {
+            newOutput.add(SampleTkb(classes: sample.classes + [target]));
+          }
+        }
+      }
+      output = newOutput;
+    }
+  }
+
+  GenTkb add(Map<String, SubjectFilter> subj) {
+    subj.forEach((key, value) {
+      _input[key] = value;
+      _generate(key, value);
+    });
+    return this;
+  }
+
+  SubjectFilter? remove(String key) {
+    SubjectFilter? value = _input.remove(key);
+    output = [];
+    _input.forEach((key, value) => _generate(key, value));
+    return value;
+  }
+
+  bool unsave(SampleTkb sample) => output.remove(sample);
+
+  GenTkb operator +(Map<String, SubjectFilter> subj) => add(subj);
+  SubjectFilter? operator -(String key) => remove(key);
 }
 
 class Tkb {
@@ -141,15 +328,15 @@ class Tkb {
   late final Map<String, String> _teacherByIds;
   final RegExp _ltMatch = RegExp(r"/_LT$/");
   final RegExp _btMatch = RegExp(r"/.[0-9]_BT$/");
-  final List<List<String>> input;
-  Tkb(this.input) {
+  final List<List<String>> _input;
+  Tkb(this._input) {
     tkb = [];
     _tkbLT = {};
     _teacherByIds = {};
     Map<String, Map<String, dynamic>> tmpTkb = {};
     Map<String, List<ClassTimeStamp>> tmpClassesLT = {};
 
-    for (List<String> mon in input) {
+    for (List<String> mon in _input) {
       String subjectID = mon[1];
       String name = mon[2];
       String classID = mon[3];
@@ -246,17 +433,7 @@ class Tkb {
     return tmpClasses;
   }
 
-  void printTkb() {
-    for (Subject s in tkb) {
-      print("${s.subjectID}: ");
-      print("  Name: ${s.name}");
-      print("  Tin chi: ${s.tin}");
-      for (SubjectClass c in s.classes) {
-        print("    Lop: ${c.classID}");
-        print("    dint: ${c.dint}");
-      }
-    }
-  }
+  String? teacher(String id) => _teacherByIds[id];
 }
 
 void main(List<String> args) {
@@ -403,5 +580,24 @@ void main(List<String> args) {
     input.add(tmp);
   });
   Tkb lmao = Tkb(input);
-  lmao.printTkb();
+  for (Subject s in lmao.tkb) {
+    print("${s.subjectID}: ");
+    print("  Name: ${s.name}");
+    print("  Tin chi: ${s.tin}");
+    for (SubjectClass c in s.classes) {
+      print("    Lop: ${c.classID}");
+      print("    dint: ${c.dint}");
+    }
+  }
+  GenTkb k = GenTkb(lmao.tkb, {
+    "IS222": SubjectFilter(inClass: ["CSODULIEU.7", "CSODULIEU.8"]),
+    "VC204": SubjectFilter(),
+  });
+	for (SampleTkb s in k.output) {
+		print("${s.dint}: ");
+		for (SubjectClass c in s.classes) {
+      print("    Lop: ${c.classID}");
+      print("    dint: ${c.dint}");
+    }
+	}
 }
