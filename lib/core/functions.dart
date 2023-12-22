@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 const List<List<int>> classTimeStamps = [
   [25200, 28200],
@@ -27,7 +28,10 @@ const List<String> dates = [
   "Thứ Bảy",
   ""
 ];
+
 const List<int> emptyDint = [0, 0, 0, 0, 0, 0, 0];
+
+const List<String> onlineClass = ["Elearning"];
 
 class ClassTimeStamp {
   final int dint;
@@ -46,14 +50,14 @@ class ClassTimeStamp {
     required this.room,
   }) {
     startStamp = 0;
-    if (room == "Elearning") {
+    if (onlineClass.contains(room)) {
       endStamp = 0;
       startStampUnix = 0;
       endStampUnix = 0;
       day = "";
       return;
     }
-    endStamp = 12;
+    endStamp = 13;
     int tmpDint = dint;
     while (tmpDint != 0) {
       if ((dint & 1) == 0) {
@@ -84,7 +88,7 @@ class SubjectClass {
     length = timestamp.length;
     teachers = timestamp.map((m) => m.teacherID).toList();
     rooms = timestamp.map((m) => m.room).toList();
-    if (timestamp[0].room == "Elearning") {
+    if (onlineClass.contains(timestamp[0].room)) {
       return;
     }
     for (ClassTimeStamp stamp in timestamp) {
@@ -166,7 +170,7 @@ class Subject {
   });
 
   Subject filter(SubjectFilter filterLayer) {
-    if (classes[0].rooms[0] == "Elearning" || filterLayer.isEmpty) {
+    if (onlineClass.contains(classes[0].rooms[0]) || filterLayer.isEmpty) {
       return this;
     }
     List<SubjectClass> result = [];
@@ -202,9 +206,6 @@ class Subject {
       result = o.map((c) => c.subjectClass).toList();
     }
     if (filterLayer.excludeTeacher.isNotEmpty) {
-      if (classes[0].rooms[0] == "Elearning") {
-        return this;
-      }
       result = classes
           .map((c) => CompareStamp(
                 delta: c.teachers.isEmpty
@@ -322,33 +323,33 @@ class GenTkb {
   SubjectFilter? operator -(String key) => remove(key);
 }
 
-class Tkb {
+class SubjectList {
   late final List<Subject> tkb;
   late final Map<String, SubjectClass> _tkbLT;
   late final Map<String, String> _teacherByIds;
   final RegExp _ltMatch = RegExp(r"/_LT$/");
   final RegExp _btMatch = RegExp(r"/.[0-9]_BT$/");
-  final List<List<String>> _input;
-  Tkb(this._input) {
+  final List<List<String>> input;
+  SubjectList.from2dList(this.input) {
     tkb = [];
     _tkbLT = {};
     _teacherByIds = {};
     Map<String, Map<String, dynamic>> tmpTkb = {};
     Map<String, List<ClassTimeStamp>> tmpClassesLT = {};
 
-    for (List<String> mon in _input) {
+    for (List<String> mon in input) {
       String subjectID = mon[1];
       String name = mon[2];
       String classID = mon[3];
-      int dayOfWeek = int.parse(mon[4]);
-      int classStamp = _toBits(mon[5]);
       String classRoom = mon[6];
+      int dayOfWeek = 0;
+      int classStamp = 0;
       int tin = int.parse(mon[7]);
       String teacherID = _teacherToID(mon[8]);
 
-      if (classRoom == "Elearning") {
-        dayOfWeek = 7;
-        classStamp = 0;
+      if (!onlineClass.contains(classRoom)) {
+        dayOfWeek = int.parse(mon[4]) - 1;
+        classStamp = _toBits(mon[5]);
       }
 
       ClassTimeStamp stamp = ClassTimeStamp(
@@ -399,7 +400,7 @@ class Tkb {
   int _toBits(String str) {
     if (str == "0-0") return 0;
     List<int> e = str.split("-").map(int.parse).toList(growable: false);
-    return _add0(_add1(0, e[1] - e[0]), 12 - e[1]);
+    return _add0(_add1(0, e[1] - e[0]), 13 - e[1]);
   }
 
   String _teacherToID(String str) {
@@ -437,149 +438,15 @@ class Tkb {
 }
 
 void main(List<String> args) {
-  var dinput = jsonDecode('''
-[
-	[
-		"1",
-		"VC204",
-		"Các dân tộc Việt Nam",
-		"DANTOCVN.1",
-		"5",
-		"3-5",
-		"B403",
-		"3",
-		"Nguyễn Anh Cường(MXV036)"
-	],
-	[
-		"2",
-		"VC204",
-		"Các dân tộc Việt Nam",
-		"DANTOCVN.1",
-		"5",
-		"6-7",
-		"B307",
-		"3",
-		"Nguyễn Anh Cường(MXV036)"
-	],
-	[
-		"3",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.7",
-		"3",
-		"1-2",
-		"A709",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"4",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.8",
-		"3",
-		"3-5",
-		"A709",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"5",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.8",
-		"3",
-		"6-7",
-		"A708",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"6",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.6",
-		"3",
-		"6-7",
-		"A709",
-		"3",
-		"Đinh Thị Thúy(CTI050)"
-	],
-	[
-		"7",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.7",
-		"3",
-		"8-10",
-		"A708",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"8",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.5",
-		"3",
-		"8-10",
-		"A709",
-		"3",
-		"Đinh Thị Thúy(CTI050)"
-	],
-	[
-		"9",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.9",
-		"4",
-		"6-8",
-		"A708",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"10",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.9",
-		"5",
-		"4-5",
-		"A709",
-		"3",
-		"Nguyễn Công Nhân(CTI048)"
-	],
-	[
-		"11",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.5",
-		"5",
-		"6-7",
-		"A709",
-		"3",
-		"Đinh Thị Thúy(CTI050)"
-	],
-	[
-		"12",
-		"IS222",
-		"Cơ sở dữ liệu",
-		"CSODULIEU.6",
-		"5",
-		"8-10",
-		"A709",
-		"3",
-		"Đinh Thị Thúy(CTI050)"
-	]
-]
-''');
+  List dinput =
+      jsonDecode(File("./test/sample_tkb.test.json").readAsStringSync());
   List<List<String>> input = [];
   dinput.toList().forEach((k) {
     List<String> tmp = [];
     k.toList().forEach((t) => tmp.add(t.toString()));
     input.add(tmp);
   });
-  Tkb lmao = Tkb(input);
+  SubjectList lmao = SubjectList.from2dList(input);
   for (Subject s in lmao.tkb) {
     print("${s.subjectID}: ");
     print("  Name: ${s.name}");
@@ -593,11 +460,11 @@ void main(List<String> args) {
     "IS222": SubjectFilter(inClass: ["CSODULIEU.7", "CSODULIEU.8"]),
     "VC204": SubjectFilter(),
   });
-	for (SampleTkb s in k.output) {
-		print("${s.dint}: ");
-		for (SubjectClass c in s.classes) {
+  for (SampleTkb s in k.output) {
+    print("${s.dint}: ");
+    for (SubjectClass c in s.classes) {
       print("    Lop: ${c.classID}");
       print("    dint: ${c.dint}");
     }
-	}
+  }
 }
