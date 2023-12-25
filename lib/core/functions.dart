@@ -41,11 +41,13 @@ class ClassTimeStamp {
   late final int endStampUnix;
   final int dayOfWeek;
   late final String day;
+  final String classID;
   final String teacherID;
   final String room;
   ClassTimeStamp({
     required this.dint,
     required this.dayOfWeek,
+    required this.classID,
     required this.teacherID,
     required this.room,
   }) {
@@ -75,6 +77,7 @@ class ClassTimeStamp {
 
 class SubjectClass {
   final String classID;
+  final String subjectID;
   final List<ClassTimeStamp> timestamp;
   late final List<int> dint;
   late final int length;
@@ -82,6 +85,7 @@ class SubjectClass {
   late final List<String> rooms;
   SubjectClass({
     required this.classID,
+    required this.subjectID,
     required this.timestamp,
   }) {
     dint = [...emptyDint];
@@ -328,14 +332,18 @@ class SubjectList {
   late final Map<String, SubjectClass> _tkbLT;
   late final Map<String, String> _teacherByIds;
   final RegExp _ltMatch = RegExp(r"/_LT$/");
-  final RegExp _btMatch = RegExp(r"/.[0-9]_BT$/");
-  final List<List<String>> input;
+  final RegExp _btMatch = RegExp(r"/\.[0-9]_BT$/");
+  final dynamic input;
   SubjectList.from2dList(this.input) {
+    if (input is! List) {
+      throw Exception("input source is not 2d array");
+    }
     tkb = [];
     _tkbLT = {};
     _teacherByIds = {};
     Map<String, Map<String, dynamic>> tmpTkb = {};
-    Map<String, List<ClassTimeStamp>> tmpClassesLT = {};
+    Map<String, Map<String, List<ClassTimeStamp>>> tmpTkbLT = {};
+    // Map<String, List<ClassTimeStamp>> tmpClassesLT = {};
 
     for (List<String> mon in input) {
       String subjectID = mon[1];
@@ -355,17 +363,25 @@ class SubjectList {
       ClassTimeStamp stamp = ClassTimeStamp(
         dint: classStamp,
         dayOfWeek: dayOfWeek,
+        classID: classID,
         teacherID: teacherID,
         room: classRoom,
       );
 
       if (_ltMatch.hasMatch(classID)) {
-        String realClassID = classID.replaceFirst(_ltMatch, '');
-        if (!tmpClassesLT.containsKey(realClassID)) {
-          tmpClassesLT[realClassID] = [stamp];
-        } else {
-          tmpClassesLT[realClassID]?.add(stamp);
+        classID = classID.replaceFirst(_ltMatch, '');
+        if (!tmpTkbLT.containsKey(subjectID)) {
+          tmpTkbLT[subjectID] = <String, List<ClassTimeStamp>>{};
         }
+        if (!tmpTkbLT[subjectID]!.containsKey(classID)) {
+          tmpTkbLT[subjectID]?[classID] = <ClassTimeStamp>[];
+        }
+        tmpTkbLT[subjectID]?[classID]!.add(stamp);
+        // if (!tmpClassesLT.containsKey(classID)) {
+        //   tmpClassesLT[classID] = [stamp];
+        // } else {
+        //   tmpClassesLT[classID]?.add(stamp);
+        // }
         continue;
       }
 
@@ -383,10 +399,88 @@ class SubjectList {
       tmpTkb[subjectID]?["classes"]?[classID].add(stamp);
     }
 
-    tmpClassesLT.forEach((classID, timestamp) =>
-        _tkbLT[classID] = SubjectClass(classID: classID, timestamp: timestamp));
+    tmpTkbLT.forEach((subjectID, classes) =>
+        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+              subjectID: subjectID,
+              classID: classID,
+              timestamp: timestamp,
+            )));
 
-    tmpTkb.forEach((subjectID, subjectInfo) => tkb.add(Subject(
+    // tmpClassesLT.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+    //       subjectID: subjectID,
+    //       classID: classID,
+    //       timestamp: timestamp,
+    //     ));
+
+    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
+          subjectID: subjectID,
+          name: subjectInfo["name"].toString(),
+          tin: subjectInfo["tin"],
+          classes: _mapToClass(subjectID, subjectInfo["classes"]),
+        )));
+  }
+  SubjectList.fromObject(this.input) {
+    if (input is! Map<String, dynamic>) {
+      throw Exception("input source is not JSON object");
+    }
+
+    Map<String, Map<String, dynamic>> tmpTkb = {};
+    Map<String, Map<String, List<ClassTimeStamp>>> tmpTkbLT = {};
+
+    input.forEach((subjectID, Map<String, dynamic> subjectInfo) {
+      if (subjectInfo["classes"] is! Map<String, List>) {
+        throw Exception("input source is not JSON object");
+      }
+      String name = subjectInfo["name"];
+      String tin = subjectInfo["tin"];
+
+      subjectInfo["classes"]
+          ?.forEach((classID, List<Map<String, dynamic>> classInfo) {
+        List<ClassTimeStamp> stamplist = classInfo
+            .map((stamp) => ClassTimeStamp(
+                  dint: onlineClass.contains(stamp["room"])
+                      ? 0
+                      : _toBits(stamp["ca"]),
+                  dayOfWeek: onlineClass.contains(stamp["room"])
+                      ? 0
+                      : (int.parse(stamp["dayOfWeek"]) - 1),
+                  classID: classID,
+                  teacherID: stamp['teacherID'],
+                  room: stamp["room"],
+                ))
+            .toList();
+        if (_ltMatch.hasMatch(classID)) {
+          if (tmpTkbLT.containsKey(subjectID)) {
+            tmpTkbLT[subjectID] = {};
+          }
+          classID = classID.replaceFirst(_ltMatch, '');
+          tmpTkbLT[subjectID]?[classID] = stamplist;
+          return;
+        }
+
+        if (!tmpTkb.containsKey(subjectID)) {
+          tmpTkb[subjectID] = {
+            "name": name,
+            "tin": tin,
+            "classes": <String, List<ClassTimeStamp>>{},
+          };
+        }
+
+        if (!tmpTkb[subjectID]?["classes"].containsKey(classID)) {
+          tmpTkb[subjectID]?["classes"][classID] = <ClassTimeStamp>[];
+        }
+        tmpTkb[subjectID]?["classes"]?[classID] = stamplist;
+      });
+    });
+
+    tmpTkbLT.forEach((subjectID, classes) =>
+        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+              subjectID: subjectID,
+              classID: classID,
+              timestamp: timestamp,
+            )));
+
+    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
           subjectID: subjectID,
           name: subjectInfo["name"].toString(),
           tin: subjectInfo["tin"],
@@ -424,8 +518,14 @@ class SubjectList {
       String id, Map<String, List<ClassTimeStamp>> info) {
     List<SubjectClass> tmpClasses = [];
     info.forEach((classID, timestamp) {
-      SubjectClass tmpClass =
-          SubjectClass(classID: classID, timestamp: timestamp);
+      if (_btMatch.hasMatch(id)) {
+        classID = classID.replaceFirst(RegExp(r"/_BT$/"), '');
+      }
+      SubjectClass tmpClass = SubjectClass(
+        subjectID: id,
+        classID: classID,
+        timestamp: timestamp,
+      );
       if (_btMatch.hasMatch(id)) {
         tmpClass.mergeLT(_tkbLT[id.replaceFirst(_btMatch, '')]);
       }
