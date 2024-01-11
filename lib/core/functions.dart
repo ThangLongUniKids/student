@@ -1,40 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
-
-const List<List<int>> classTimeStamps = [
-  [25200, 28200],
-  [28800, 31800],
-  [33000, 36000],
-  [36600, 39600],
-  [40200, 43200],
-  [46800, 49800],
-  [50400, 53400],
-  [54000, 57000],
-  [57600, 60600],
-  [61200, 64200],
-  [64800, 67800],
-  [68400, 71400],
-  [72000, 75000],
-  [75600, 78600],
-];
-
-const List<String> dates = [
-  "Chủ Nhật",
-  "Thứ Hai",
-  "Thứ Ba",
-  "Thứ Tư",
-  "Thứ Năm",
-  "Thứ Sáu",
-  "Thứ Bảy",
-  ""
-];
-
-const List<int> emptyDint = [0, 0, 0, 0, 0, 0, 0];
-
-const List<String> onlineClass = ["Elearning"];
+import 'package:student/core/presets.dart';
 
 class ClassTimeStamp {
-  final int dint;
+  final int intMatrix;
   late int startStamp;
   late final int startStampUnix;
   late int endStamp;
@@ -45,7 +12,7 @@ class ClassTimeStamp {
   final String teacherID;
   final String room;
   ClassTimeStamp({
-    required this.dint,
+    required this.intMatrix,
     required this.dayOfWeek,
     required this.classID,
     required this.teacherID,
@@ -60,9 +27,9 @@ class ClassTimeStamp {
       return;
     }
     endStamp = 13;
-    int tmpDint = dint;
+    int tmpDint = intMatrix;
     while (tmpDint != 0) {
-      if ((dint & 1) == 0) {
+      if ((intMatrix & 1) == 0) {
         endStamp--;
       } else {
         startStamp++;
@@ -79,7 +46,7 @@ class SubjectClass {
   final String classID;
   final String subjectID;
   final List<ClassTimeStamp> timestamp;
-  late final List<int> dint;
+  late final List<int> intMatrix;
   late final int length;
   late final List<String> teachers;
   late final List<String> rooms;
@@ -88,7 +55,7 @@ class SubjectClass {
     required this.subjectID,
     required this.timestamp,
   }) {
-    dint = [...emptyDint];
+    intMatrix = [0, 0, 0, 0, 0, 0, 0];
     length = timestamp.length;
     teachers = timestamp.map((m) => m.teacherID).toList();
     rooms = timestamp.map((m) => m.room).toList();
@@ -96,7 +63,7 @@ class SubjectClass {
       return;
     }
     for (ClassTimeStamp stamp in timestamp) {
-      dint[stamp.dayOfWeek] |= stamp.dint;
+      intMatrix[stamp.dayOfWeek] |= stamp.intMatrix;
     }
   }
 
@@ -105,7 +72,7 @@ class SubjectClass {
       return;
     }
     for (ClassTimeStamp stamp in lt.timestamp) {
-      dint[stamp.dayOfWeek] |= stamp.dint;
+      intMatrix[stamp.dayOfWeek] |= stamp.intMatrix;
     }
   }
 }
@@ -129,23 +96,18 @@ class SubjectFilter {
     this.spareDint = const [],
   }) {
     length = 0;
-    if (inClass.isNotEmpty) {
-      length++;
-    }
-    if (notInClass.isNotEmpty) {
-      length++;
-    }
-    if (includeTeacher.isNotEmpty) {
-      length++;
-    }
-    if (excludeTeacher.isNotEmpty) {
-      length++;
-    }
-    if (forcefulDint.isNotEmpty) {
-      length++;
-    }
-    if (spareDint.isNotEmpty) {
-      length++;
+    List<List> verifyList = [
+      inClass,
+      notInClass,
+      includeTeacher,
+      excludeTeacher,
+      forcefulDint,
+      spareDint,
+    ];
+    for (List property in verifyList) {
+      if (property.isNotEmpty) {
+        length++;
+      }
     }
     isEmpty = length == 0;
     isNotEmpty = !isEmpty;
@@ -228,25 +190,23 @@ class Subject {
     }
     if (filterLayer.forcefulDint.isNotEmpty) {
       result = classes.where((c) {
-        List<int> tmpDint = [...emptyDint];
         for (int i = 0; i < 7; i++) {
-          tmpDint[i] = c.dint[i] & filterLayer.forcefulDint[i];
+          if (c.intMatrix[i] & filterLayer.forcefulDint[i] != 0) {
+            return false;
+          }
         }
-        return tmpDint.fold(0, (a, b) => a + b) == 0;
+        return true;
       }).toList();
     }
     if (filterLayer.spareDint.isNotEmpty) {
       List<CompareStamp> o = classes
           .map((c) => CompareStamp(
                 delta: (() {
-                  List<int> tmpDint = [...emptyDint];
+                  double deltaSum = 1.0;
                   for (int i = 0; i < 7; i++) {
-                    tmpDint[i] = c.dint[i] & filterLayer.forcefulDint[i];
+                    deltaSum *= 1 + (c.intMatrix[i] & filterLayer.spareDint[i]);
                   }
-                  return tmpDint
-                      .map((d) => d + 1)
-                      .fold(1, (p, c) => p * c)
-                      .toDouble();
+                  return deltaSum;
                 })(),
                 subjectClass: c,
               ))
@@ -255,316 +215,5 @@ class Subject {
       result = o.map((c) => c.subjectClass).toList();
     }
     return Subject(subjectID: subjectID, name: name, tin: tin, classes: result);
-  }
-}
-
-class SampleTkb {
-  final List<SubjectClass> classes;
-  late final List<int> dint;
-  late final int length;
-  SampleTkb({required this.classes}) {
-    length = classes.length;
-    dint = [...emptyDint];
-    for (SubjectClass c in classes) {
-      for (int i = 0; i < 7; i++) {
-        dint[i] |= c.dint[i];
-      }
-    }
-  }
-}
-
-class GenTkb {
-  final List<Subject> _tkb;
-  late final Map<String, SubjectFilter> _input;
-  late List<SampleTkb> output = [];
-  late List<int> dint = [...emptyDint];
-  late int length = 0;
-  GenTkb(this._tkb, this._input) {
-    _input.forEach((key, value) => _generate(key, value));
-  }
-
-  void _generate(String key, SubjectFilter filterLayer) {
-    Subject filteredSubject =
-        _tkb.firstWhere((subj) => subj.subjectID == key).filter(filterLayer);
-    if (output.isEmpty) {
-      output
-          .addAll(filteredSubject.classes.map((c) => SampleTkb(classes: [c])));
-    } else {
-      List<SampleTkb> newOutput = [];
-      for (SampleTkb sample in output) {
-        for (SubjectClass target in filteredSubject.classes) {
-          List<int> tmpDint = [...emptyDint];
-          for (int i = 0; i < 7; i++) {
-            tmpDint[i] = sample.dint[i] & target.dint[i];
-          }
-          if (tmpDint.fold(0, (a, b) => a + b) == 0) {
-            newOutput.add(SampleTkb(classes: sample.classes + [target]));
-          }
-        }
-      }
-      output = newOutput;
-    }
-  }
-
-  GenTkb add(Map<String, SubjectFilter> subj) {
-    subj.forEach((key, value) {
-      _input[key] = value;
-      _generate(key, value);
-    });
-    return this;
-  }
-
-  SubjectFilter? remove(String key) {
-    SubjectFilter? value = _input.remove(key);
-    output = [];
-    _input.forEach((key, value) => _generate(key, value));
-    return value;
-  }
-
-  bool unsave(SampleTkb sample) => output.remove(sample);
-
-  GenTkb operator +(Map<String, SubjectFilter> subj) => add(subj);
-  SubjectFilter? operator -(String key) => remove(key);
-}
-
-class SubjectList {
-  late final List<Subject> tkb;
-  late final Map<String, SubjectClass> _tkbLT;
-  late final Map<String, String> _teacherByIds;
-  final RegExp _ltMatch = RegExp(r"/_LT$/");
-  final RegExp _btMatch = RegExp(r"/\.[0-9]_BT$/");
-  final dynamic input;
-  SubjectList.from2dList(this.input) {
-    if (input is! List) {
-      throw Exception("input source is not 2d array");
-    }
-    tkb = [];
-    _tkbLT = {};
-    _teacherByIds = {};
-    Map<String, Map<String, dynamic>> tmpTkb = {};
-    Map<String, Map<String, List<ClassTimeStamp>>> tmpTkbLT = {};
-    // Map<String, List<ClassTimeStamp>> tmpClassesLT = {};
-
-    for (List<String> mon in input) {
-      String subjectID = mon[1];
-      String name = mon[2];
-      String classID = mon[3];
-      String classRoom = mon[6];
-      int dayOfWeek = 0;
-      int classStamp = 0;
-      int tin = int.parse(mon[7]);
-      String teacherID = _teacherToID(mon[8]);
-
-      if (!onlineClass.contains(classRoom)) {
-        dayOfWeek = int.parse(mon[4]) - 1;
-        classStamp = _toBits(mon[5]);
-      }
-
-      ClassTimeStamp stamp = ClassTimeStamp(
-        dint: classStamp,
-        dayOfWeek: dayOfWeek,
-        classID: classID,
-        teacherID: teacherID,
-        room: classRoom,
-      );
-
-      if (_ltMatch.hasMatch(classID)) {
-        classID = classID.replaceFirst(_ltMatch, '');
-        if (!tmpTkbLT.containsKey(subjectID)) {
-          tmpTkbLT[subjectID] = <String, List<ClassTimeStamp>>{};
-        }
-        if (!tmpTkbLT[subjectID]!.containsKey(classID)) {
-          tmpTkbLT[subjectID]?[classID] = <ClassTimeStamp>[];
-        }
-        tmpTkbLT[subjectID]?[classID]!.add(stamp);
-        // if (!tmpClassesLT.containsKey(classID)) {
-        //   tmpClassesLT[classID] = [stamp];
-        // } else {
-        //   tmpClassesLT[classID]?.add(stamp);
-        // }
-        continue;
-      }
-
-      if (!tmpTkb.containsKey(subjectID)) {
-        tmpTkb[subjectID] = {
-          "name": name,
-          "tin": tin,
-          "classes": <String, List<ClassTimeStamp>>{},
-        };
-      }
-
-      if (!tmpTkb[subjectID]?["classes"].containsKey(classID)) {
-        tmpTkb[subjectID]?["classes"][classID] = <ClassTimeStamp>[];
-      }
-      tmpTkb[subjectID]?["classes"]?[classID].add(stamp);
-    }
-
-    tmpTkbLT.forEach((subjectID, classes) =>
-        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
-              subjectID: subjectID,
-              classID: classID,
-              timestamp: timestamp,
-            )));
-
-    // tmpClassesLT.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
-    //       subjectID: subjectID,
-    //       classID: classID,
-    //       timestamp: timestamp,
-    //     ));
-
-    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
-          subjectID: subjectID,
-          name: subjectInfo["name"].toString(),
-          tin: subjectInfo["tin"],
-          classes: _mapToClass(subjectID, subjectInfo["classes"]),
-        )));
-  }
-  SubjectList.fromObject(this.input) {
-    if (input is! Map<String, dynamic>) {
-      throw Exception("input source is not JSON object");
-    }
-
-    Map<String, Map<String, dynamic>> tmpTkb = {};
-    Map<String, Map<String, List<ClassTimeStamp>>> tmpTkbLT = {};
-
-    input.forEach((subjectID, Map<String, dynamic> subjectInfo) {
-      if (subjectInfo["classes"] is! Map<String, List>) {
-        throw Exception("input source is not JSON object");
-      }
-      String name = subjectInfo["name"];
-      String tin = subjectInfo["tin"];
-
-      subjectInfo["classes"]
-          ?.forEach((classID, List<Map<String, dynamic>> classInfo) {
-        List<ClassTimeStamp> stamplist = classInfo
-            .map((stamp) => ClassTimeStamp(
-                  dint: onlineClass.contains(stamp["room"])
-                      ? 0
-                      : _toBits(stamp["ca"]),
-                  dayOfWeek: onlineClass.contains(stamp["room"])
-                      ? 0
-                      : (int.parse(stamp["dayOfWeek"]) - 1),
-                  classID: classID,
-                  teacherID: stamp['teacherID'],
-                  room: stamp["room"],
-                ))
-            .toList();
-        if (_ltMatch.hasMatch(classID)) {
-          if (tmpTkbLT.containsKey(subjectID)) {
-            tmpTkbLT[subjectID] = {};
-          }
-          classID = classID.replaceFirst(_ltMatch, '');
-          tmpTkbLT[subjectID]?[classID] = stamplist;
-          return;
-        }
-
-        if (!tmpTkb.containsKey(subjectID)) {
-          tmpTkb[subjectID] = {
-            "name": name,
-            "tin": tin,
-            "classes": <String, List<ClassTimeStamp>>{},
-          };
-        }
-
-        if (!tmpTkb[subjectID]?["classes"].containsKey(classID)) {
-          tmpTkb[subjectID]?["classes"][classID] = <ClassTimeStamp>[];
-        }
-        tmpTkb[subjectID]?["classes"]?[classID] = stamplist;
-      });
-    });
-
-    tmpTkbLT.forEach((subjectID, classes) =>
-        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
-              subjectID: subjectID,
-              classID: classID,
-              timestamp: timestamp,
-            )));
-
-    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
-          subjectID: subjectID,
-          name: subjectInfo["name"].toString(),
-          tin: subjectInfo["tin"],
-          classes: _mapToClass(subjectID, subjectInfo["classes"]),
-        )));
-  }
-
-  int _add0(int i, int n) => i << n;
-  int _add1(int i, int n) => (i << (n + 1)) + (2 << n) - 1;
-
-  int _toBits(String str) {
-    if (str == "0-0") return 0;
-    List<int> e = str.split("-").map(int.parse).toList(growable: false);
-    return _add0(_add1(0, e[1] - e[0]), 13 - e[1]);
-  }
-
-  String _teacherToID(String str) {
-    if (str.isEmpty) {
-      return "";
-    }
-
-    RegExp teacherIDFilter = RegExp(r"\([A-Z]{3}[0-9]{3}\)");
-
-    String teacherID = teacherIDFilter.stringMatch(str).toString();
-    teacherID = teacherID.substring(1, teacherID.length - 1);
-
-    if (!_teacherByIds.containsKey(teacherID)) {
-      _teacherByIds[teacherID] = str.replaceFirst(teacherIDFilter, '');
-    }
-
-    return teacherID;
-  }
-
-  List<SubjectClass> _mapToClass(
-      String id, Map<String, List<ClassTimeStamp>> info) {
-    List<SubjectClass> tmpClasses = [];
-    info.forEach((classID, timestamp) {
-      if (_btMatch.hasMatch(id)) {
-        classID = classID.replaceFirst(RegExp(r"/_BT$/"), '');
-      }
-      SubjectClass tmpClass = SubjectClass(
-        subjectID: id,
-        classID: classID,
-        timestamp: timestamp,
-      );
-      if (_btMatch.hasMatch(id)) {
-        tmpClass.mergeLT(_tkbLT[id.replaceFirst(_btMatch, '')]);
-      }
-      tmpClasses.add(tmpClass);
-    });
-    return tmpClasses;
-  }
-
-  String? teacher(String id) => _teacherByIds[id];
-}
-
-void main(List<String> args) {
-  List dinput =
-      jsonDecode(File("./test/sample_tkb.test.json").readAsStringSync());
-  List<List<String>> input = [];
-  dinput.toList().forEach((k) {
-    List<String> tmp = [];
-    k.toList().forEach((t) => tmp.add(t.toString()));
-    input.add(tmp);
-  });
-  SubjectList lmao = SubjectList.from2dList(input);
-  for (Subject s in lmao.tkb) {
-    print("${s.subjectID}: ");
-    print("  Name: ${s.name}");
-    print("  Tin chi: ${s.tin}");
-    for (SubjectClass c in s.classes) {
-      print("    Lop: ${c.classID}");
-      print("    dint: ${c.dint}");
-    }
-  }
-  GenTkb k = GenTkb(lmao.tkb, {
-    "IS222": SubjectFilter(inClass: ["CSODULIEU.7", "CSODULIEU.8"]),
-    "VC204": SubjectFilter(),
-  });
-  for (SampleTkb s in k.output) {
-    print("${s.dint}: ");
-    for (SubjectClass c in s.classes) {
-      print("    Lop: ${c.classID}");
-      print("    dint: ${c.dint}");
-    }
   }
 }
