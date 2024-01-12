@@ -1,81 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:student/core/presets.dart';
 import 'package:student/core/functions.dart';
 
-class SampleTkb {
-  final List<SubjectClass> classes;
-  late final List<int> intMatrix;
-  late final int length;
-  SampleTkb({required this.classes}) {
-    length = classes.length;
-    intMatrix = [0, 0, 0, 0, 0, 0, 0];
-    for (SubjectClass c in classes) {
-      for (int i = 0; i < 7; i++) {
-        intMatrix[i] |= c.intMatrix[i];
-      }
-    }
-  }
-}
-
-class GenTkb {
-  final List<Subject> _tkb;
-  late final Map<String, SubjectFilter> _input;
-  late List<SampleTkb> output = [];
-  late List<int> intMatrix = [0, 0, 0, 0, 0, 0, 0];
-  late int length = 0;
-  GenTkb(this._tkb, this._input) {
-    _input.forEach((key, value) => _generate(key, value));
-  }
-
-  void _generate(String key, SubjectFilter filterLayer) {
-    Subject filteredSubject =
-        _tkb.firstWhere((subj) => subj.subjectID == key).filter(filterLayer);
-    if (output.isEmpty) {
-      output
-          .addAll(filteredSubject.classes.map((c) => SampleTkb(classes: [c])));
-    } else {
-      List<SampleTkb> newOutput = [];
-      for (SampleTkb sample in output) {
-        for (SubjectClass target in filteredSubject.classes) {
-          List<int> tmpDint = [0, 0, 0, 0, 0, 0, 0];
-          for (int i = 0; i < 7; i++) {
-            tmpDint[i] = sample.intMatrix[i] & target.intMatrix[i];
-          }
-          if (tmpDint.fold(0, (a, b) => a + b) == 0) {
-            newOutput.add(SampleTkb(classes: sample.classes + [target]));
-          }
-        }
-      }
-      output = newOutput;
-    }
-  }
-
-  GenTkb add(Map<String, SubjectFilter> subj) {
-    subj.forEach((key, value) {
-      _input[key] = value;
-      _generate(key, value);
-    });
-    return this;
-  }
-
-  SubjectFilter? remove(String key) {
-    SubjectFilter? value = _input.remove(key);
-    output = [];
-    _input.forEach((key, value) => _generate(key, value));
-    return value;
-  }
-
-  bool unsave(SampleTkb sample) => output.remove(sample);
-
-  GenTkb operator +(Map<String, SubjectFilter> subj) => add(subj);
-  SubjectFilter? operator -(String key) => remove(key);
-}
-
 class SubjectList {
-  late final List<Subject> tkb;
-  late final Map<String, SubjectClass> _tkbLT;
+  late final List<Subject> timetable;
+  late final Map<String, SubjectClass> _classesLT;
   late final Map<String, String> _teacherByIds;
   final RegExp _ltMatch = RegExp(r"/_LT$/");
   final RegExp _btMatch = RegExp(r"/\.[0-9]_BT$/");
@@ -84,8 +12,8 @@ class SubjectList {
     if (input is! List) {
       throw Exception("input source is not 2d array");
     }
-    tkb = [];
-    _tkbLT = {};
+    timetable = [];
+    _classesLT = {};
     _teacherByIds = {};
     Map<String, Map<String, dynamic>> tmpTkb = {};
     Map<String, Map<String, List<ClassTimeStamp>>> tmpTkbLT = {};
@@ -146,19 +74,19 @@ class SubjectList {
     }
 
     tmpTkbLT.forEach((subjectID, classes) =>
-        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+        classes.forEach((classID, timestamp) => _classesLT[classID] = SubjectClass(
               subjectID: subjectID,
               classID: classID,
               timestamp: timestamp,
             )));
 
-    // tmpClassesLT.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+    // tmpClassesLT.forEach((classID, timestamp) => _classesLT[classID] = SubjectClass(
     //       subjectID: subjectID,
     //       classID: classID,
     //       timestamp: timestamp,
     //     ));
 
-    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
+    tmpTkb.forEach((String subjectID, subjectInfo) => timetable.add(Subject(
           subjectID: subjectID,
           name: subjectInfo["name"].toString(),
           tin: subjectInfo["tin"],
@@ -220,13 +148,13 @@ class SubjectList {
     });
 
     tmpTkbLT.forEach((subjectID, classes) =>
-        classes.forEach((classID, timestamp) => _tkbLT[classID] = SubjectClass(
+        classes.forEach((classID, timestamp) => _classesLT[classID] = SubjectClass(
               subjectID: subjectID,
               classID: classID,
               timestamp: timestamp,
             )));
 
-    tmpTkb.forEach((String subjectID, subjectInfo) => tkb.add(Subject(
+    tmpTkb.forEach((String subjectID, subjectInfo) => timetable.add(Subject(
           subjectID: subjectID,
           name: subjectInfo["name"].toString(),
           tin: subjectInfo["tin"],
@@ -273,7 +201,7 @@ class SubjectList {
         timestamp: timestamp,
       );
       if (_btMatch.hasMatch(id)) {
-        tmpClass.mergeLT(_tkbLT[id.replaceFirst(_btMatch, '')]);
+        tmpClass.mergeLT(_classesLT[id.replaceFirst(_btMatch, '')]);
       }
       tmpClasses.add(tmpClass);
     });
@@ -283,34 +211,34 @@ class SubjectList {
   String? teacher(String id) => _teacherByIds[id];
 }
 
-void main(List<String> args) {
-  List dinput =
-      jsonDecode(File("./test/sample_tkb.test.json").readAsStringSync());
-  List<List<String>> input = [];
-  dinput.toList().forEach((k) {
-    List<String> tmp = [];
-    k.toList().forEach((t) => tmp.add(t.toString()));
-    input.add(tmp);
-  });
-  SubjectList lmao = SubjectList.from2dList(input);
-  for (Subject s in lmao.tkb) {
-    print("${s.subjectID}: ");
-    print("  Name: ${s.name}");
-    print("  Tin chi: ${s.tin}");
-    for (SubjectClass c in s.classes) {
-      print("    Lop: ${c.classID}");
-      print("    intMatrix: ${c.intMatrix}");
-    }
-  }
-  GenTkb k = GenTkb(lmao.tkb, {
-    "IS222": SubjectFilter(inClass: ["CSODULIEU.7", "CSODULIEU.8"]),
-    "VC204": SubjectFilter(),
-  });
-  for (SampleTkb s in k.output) {
-    print("${s.intMatrix}: ");
-    for (SubjectClass c in s.classes) {
-      print("    Lop: ${c.classID}");
-      print("    intMatrix: ${c.intMatrix}");
-    }
-  }
-}
+// void main(List<String> args) {
+//   List dinput =
+//       jsonDecode(File("./test/sample_tkb.test.json").readAsStringSync());
+//   List<List<String>> input = [];
+//   dinput.toList().forEach((k) {
+//     List<String> tmp = [];
+//     k.toList().forEach((t) => tmp.add(t.toString()));
+//     input.add(tmp);
+//   });
+//   SubjectList lmao = SubjectList.from2dList(input);
+//   for (Subject s in lmao.timetable) {
+//     print("${s.subjectID}: ");
+//     print("  Name: ${s.name}");
+//     print("  Tin chi: ${s.tin}");
+//     for (SubjectClass c in s.classes) {
+//       print("    Lop: ${c.classID}");
+//       print("    intMatrix: ${c.intMatrix}");
+//     }
+//   }
+//   GenTkb k = GenTkb(lmao.timetable, {
+//     "IS222": SubjectFilter(inClass: ["CSODULIEU.7", "CSODULIEU.8"]),
+//     "VC204": SubjectFilter(),
+//   });
+//   for (SampleTkb s in k.output) {
+//     print("${s.intMatrix}: ");
+//     for (SubjectClass c in s.classes) {
+//       print("    Lop: ${c.classID}");
+//       print("    intMatrix: ${c.intMatrix}");
+//     }
+//   }
+// }
